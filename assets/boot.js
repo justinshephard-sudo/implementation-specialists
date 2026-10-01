@@ -10,7 +10,13 @@
       $("tab-" + t).setAttribute("aria-selected", String(t === name));
       $("view-" + t).hidden = t !== name;
     });
-    if (name === "builds" && IS.board.stale && IS.config) IS.board.load(true);
+    const isBuilds = name === "builds";
+    $("pageTitle").textContent = isBuilds ? "Current builds" : "New quote";
+    $("pageSub").textContent = isBuilds
+      ? "Every Additional Services request, by stage. Click a card to update it."
+      : "Pick the services, send the quote email, then create the card. It lands in Quote Sent.";
+    $("summary").hidden = !isBuilds;
+    if (isBuilds && IS.board.stale && IS.config) IS.board.load(true);
     try { history.replaceState(null, "", location.pathname + location.search + (name === "quote" ? "#quote" : "")); } catch (e) { /* ignore */ }
   };
 

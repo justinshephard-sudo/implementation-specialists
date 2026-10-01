@@ -101,7 +101,7 @@
         <td class="r mono">${money(l.amount)}</td></tr>`).join("");
     $("paper").innerHTML = `
       <div class="ph">
-        <div><div class="brand">Lawmatics</div><div class="doc">Services quote</div></div>
+        <div><img class="brand-logo" src="assets/lawmatics-logo.svg" alt="Lawmatics" width="132" height="22"><div class="doc">Services quote</div></div>
         <div class="qno">${s.firmId ? "Q-" + today.toISOString().slice(2, 10).replace(/-/g, "") + "-" + esc(s.firmId) : "Quote"}<br>${fmtDate(today)}</div>
       </div>
       <div class="meta">

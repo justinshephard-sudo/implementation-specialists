@@ -6,15 +6,16 @@
   <title>Additional Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="assets/styles.css?v=2">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/styles.css?v=3">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <!-- Sign-in gate: shown until a verified @lawmatics.com Google account signs in -->
-  <div class="wrap" id="gate">
+  <div id="gate">
     <div class="gate">
-      <div class="eyebrow">Implementation Specialists</div>
+      <img class="gate-logo" src="assets/lawmatics-logo.svg" alt="Lawmatics" width="150" height="25">
       <h1>Additional Services</h1>
       <p>Sign in with your Lawmatics Google account to see current builds and create quotes.</p>
       <div id="gsiButton"></div>
@@ -22,26 +23,35 @@
     </div>
   </div>
 
-  <div class="wrap" id="app" hidden>
-    <header class="top">
-      <div>
-        <div class="eyebrow">Implementation Specialists</div>
-        <h1>Additional Services</h1>
+  <div id="app" hidden>
+    <header class="appbar">
+      <div class="appbar-in">
+        <div class="brand"><img src="assets/lawmatics-logo.svg" alt="Lawmatics" width="128" height="21"><span class="product">Implementation Specialists</span></div>
+        <nav class="tabs" role="tablist" aria-label="Sections">
+          <button type="button" role="tab" id="tab-builds" aria-controls="view-builds" aria-selected="true">Builds</button>
+          <button type="button" role="tab" id="tab-quote" aria-controls="view-quote" aria-selected="false">New quote</button>
+        </nav>
+        <div class="who"><div class="avatar" id="avatar" aria-hidden="true"></div><span class="who-name" id="whoName"></span><button class="linkbtn" type="button" id="signOut">Sign out</button></div>
       </div>
-      <div class="who"><div class="avatar" id="avatar" aria-hidden="true"></div><span>Signed in as <strong id="whoName"></strong> · <button class="linkbtn" type="button" id="signOut">Sign out</button></span></div>
     </header>
 
+    <div class="band">
+      <div class="wrap band-in">
+        <div class="band-title">
+          <div class="eyebrow">Additional Services</div>
+          <h1 id="pageTitle">Current builds</h1>
+          <p class="band-sub" id="pageSub">Every Additional Services request, by stage. Click a card to update it.</p>
+        </div>
+        <div class="summary" id="summary"></div>
+      </div>
+    </div>
+
+    <main class="wrap">
     <div class="mockbar" role="note" id="mockBar" hidden>
       <span><strong>Test mode.</strong> Sample prices and data, no sign-in, and nothing is written to Asana.</span>
     </div>
 
-    <nav class="tabs" role="tablist" aria-label="Sections">
-      <button type="button" role="tab" id="tab-builds" aria-controls="view-builds" aria-selected="true">Builds</button>
-      <button type="button" role="tab" id="tab-quote" aria-controls="view-quote" aria-selected="false">New quote</button>
-    </nav>
-
     <section id="view-builds" role="tabpanel" aria-labelledby="tab-builds">
-      <div class="summary" id="summary"></div>
       <div class="toolbar">
         <input type="search" id="q" placeholder="Search firm, Firm ID, quote ID…" aria-label="Search requests">
         <select id="fAssignee" aria-label="Filter by assignee"><option value="">All assignees</option></select>
@@ -65,7 +75,7 @@
     <form class="grid" id="qform" novalidate>
       <div class="col">
         <section class="block" aria-labelledby="h-acct">
-          <h2 id="h-acct"><span class="step">1</span>Account</h2>
+          <h2 id="h-acct">Account</h2>
           <div class="fields">
             <label class="f"><span>Firm name <span class="req">*</span></span><input type="text" id="firm" autocomplete="off"></label>
             <label class="f"><span>Firm ID <span class="req">*</span></span><input type="text" id="firmId" inputmode="numeric" autocomplete="off"></label>
@@ -88,13 +98,13 @@
         </section>
 
         <section class="block" aria-labelledby="h-svc">
-          <h2 id="h-svc"><span class="step">2</span>Services</h2>
+          <h2 id="h-svc">Services</h2>
           <p class="hint">Set a quantity for each item. Detail questions open for each service you add.</p>
           <div id="catalog" style="display:grid;gap:12px"></div>
         </section>
 
         <section class="block" aria-labelledby="h-waive">
-          <h2 id="h-waive"><span class="step">3</span>Waiver</h2>
+          <h2 id="h-waive">Waiver</h2>
           <label class="check"><input type="checkbox" id="waived"> Waive the charge (account is in the 6-month upsell window)</label>
           <p class="hint" style="margin:0">Waived requests go through the full process. The list value is still recorded for reporting. Nothing is charged in Chargebee.</p>
         </section>
@@ -115,7 +125,7 @@
 
         <div class="btns">
           <button class="btn" type="button" id="copyBtn">Copy quote email</button>
-          <button class="btn primary" type="submit" id="createBtn">Quote sent – create card</button>
+          <button class="btn cta" type="submit" id="createBtn">Quote sent – create card</button>
           <div class="toast full" id="toast" role="status"></div>
         </div>
 
@@ -128,6 +138,7 @@
       </aside>
     </form>
     </section>
+    </main>
   </div>
 
   <!-- Request detail drawer -->
@@ -140,10 +151,10 @@
     <div class="drawer-body" id="dBody"></div>
   </aside>
 
-  <script src="assets/config.js?v=2"></script>
-  <script src="assets/app.js?v=2"></script>
-  <script src="assets/quote.js?v=2"></script>
-  <script src="assets/board.js?v=2"></script>
-  <script src="assets/boot.js?v=2"></script>
+  <script src="assets/config.js?v=3"></script>
+  <script src="assets/app.js?v=3"></script>
+  <script src="assets/quote.js?v=3"></script>
+  <script src="assets/board.js?v=3"></script>
+  <script src="assets/boot.js?v=3"></script>
 </body>
 </html>
