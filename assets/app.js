@@ -24,6 +24,39 @@
     initials: (name) => String(name || "?").split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase(),
   });
 
+  // ───────────── Files ─────────────
+  IS.MAX_FILE_BYTES = 25 * 1024 * 1024;
+  IS.fmtSize = (n) => n == null ? "" : n < 1024 ? n + " B" : n < 1048576 ? Math.round(n / 1024) + " KB" : (n / 1048576).toFixed(1) + " MB";
+  IS.readBase64 = (file) => new Promise((ok, fail) => {
+    const fr = new FileReader();
+    fr.onload = () => ok(String(fr.result).split(",")[1] || "");
+    fr.onerror = () => fail(new Error("Couldn't read " + file.name));
+    fr.readAsDataURL(file);
+  });
+  // Uploads one at a time (keeps each request well under Apps Script's size limit).
+  // onEach(file, result | null, error | null, index, total)
+  IS.uploadFiles = async function (gid, files, onEach) {
+    const out = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        if (f.size > IS.MAX_FILE_BYTES) throw new Error("is over the 25 MB limit");
+        const data = await IS.readBase64(f);
+        const res = await IS.api("uploadFile", { gid, file: { name: f.name, type: f.type, data } });
+        out.push(res.file); onEach && onEach(f, res.file, null, i, files.length);
+      } catch (e) { onEach && onEach(f, null, e, i, files.length); }
+    }
+    return out;
+  };
+  // Asana download links expire, so ask for a fresh one; open the tab first so popup blockers allow it.
+  IS.openFile = async function (fileGid) {
+    const w = window.open("about:blank", "_blank");
+    try {
+      const res = await IS.api("fileUrl", { fileGid });
+      if (w) w.location.href = res.url; else location.href = res.url;
+    } catch (e) { if (w) w.close(); throw e; }
+  };
+
   // ───────────── API ─────────────
   IS.api = async function (action, payload) {
     if (MOCK) return IS.mockApi(action, payload || {});
@@ -137,6 +170,7 @@
       notes: "Quote " + r.quoteId + " · sample data\n\nNotes\nThis is test-mode sample data.",
       subtasks: r.services.map((s, i) => ({ gid: r.gid + "-" + i, name: "1× " + s, completed: r.section !== SECTIONS[0] && i === 0 }))
         .concat([{ gid: r.gid + "-p", name: "Record payment (Chargebee invoice ID)", completed: !!r.paidDate }, { gid: r.gid + "-z", name: "Zight walkthrough video", completed: !!r.delivered }]),
+      files: [{ gid: "f-" + r.gid, name: "Sample intake packet.pdf", size: 248000, at: new Date(Date.now() - 2 * 864e5).toISOString(), host: "asana" }],
       comments: [{ gid: "c1", text: "Elliott Jones: Customer approved by reply.", at: new Date(Date.now() - 864e5).toISOString(), by: "Justin Shephard" }],
     };
     return mockExtras[r.gid];
@@ -153,7 +187,7 @@
         ["Sample Ortiz & Co", "5540", "Immigration", "Elliott Jones"], ["Sample Reyes Family Law", "5502", "Family Law", "Kennedy Wickham"],
         ["Sample Kline Estate Planning", "5488", "Estate Planning", "Elliott Jones"], ["Sample Park Immigration", "5470", "Immigration", "Kennedy Wickham"],
         ["Sample Moss PI Group", "5455", "Personal Injury", "Elliott Jones"], ["Sample Lane Bankruptcy", "5420", "Bankruptcy", "Kennedy Wickham"] ] });
-      case "getRequest": { const r = find(p.gid); return wait({ request: Object.assign({}, r, extrasFor(r)) }); }
+      case "getRequest": { const r = find(p.gid); return wait({ request: JSON.parse(JSON.stringify(Object.assign({}, r, extrasFor(r)))) }); }
       case "updateRequest": {
         const r = find(p.gid); const c = p.changes; const log = [];
         if (c.paymentStatus === "Paid" && !r.paidDate && !c.paidDate) c.paidDate = IS.todayIso();
@@ -167,6 +201,9 @@
         return wait({ request: Object.assign({}, r, ex) });
       }
       case "setSubtask": { const ex = mockExtras[p.parentGid]; const s = ex && ex.subtasks.find((x) => x.gid === p.gid); if (s) s.completed = p.completed; return wait({ subtask: { gid: p.gid, completed: p.completed } }); }
+      case "uploadFile": { const ex = extrasFor(find(p.gid)); const f = { gid: "f" + Date.now() + Math.random().toString(36).slice(2, 6), name: p.file.name, size: Math.round(p.file.data.length * 0.75), at: new Date().toISOString(), host: "asana" }; if (ex) ex.files.push(f); return wait({ file: f }); }
+      case "fileUrl": return wait({ url: "about:blank" });
+      case "deleteFile": { Object.values(mockExtras).forEach((ex) => { ex.files = ex.files.filter((f) => f.gid !== p.fileGid); }); return wait({ deleted: true }); }
       case "addComment": { const ex = mockExtras[p.gid]; const cm = { gid: "c" + Date.now(), text: IS.user.name + ": " + p.text, at: new Date().toISOString(), by: "Justin Shephard" }; if (ex) ex.comments.push(cm); return wait({ comment: cm }); }
       case "createRequest": {
         const r = p.request;

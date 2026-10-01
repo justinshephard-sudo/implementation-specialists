@@ -114,6 +114,31 @@
     setStatus(""); render(); $("firm").focus();
   }
   Q.firmPicked = () => picked;
+
+  // ───────────── files to attach once the card exists ─────────────
+  let pending = [];
+  function renderPending() {
+    $("qFileList").innerHTML = pending.map((f, i) => `<div class="file">
+        <span class="ext">${esc((/\.([a-z0-9]{1,5})$/i.exec(f.name) || [, "FILE"])[1].toUpperCase())}</span>
+        <span class="fname static">${esc(f.name)}</span>
+        <span class="fmeta">${esc(IS.fmtSize(f.size))}${f.size > IS.MAX_FILE_BYTES ? ' · <span class="err">over 25 MB</span>' : ""}</span>
+        <span class="factions"><button type="button" class="linkbtn danger" data-rm="${i}">Remove</button></span></div>`).join("");
+  }
+  function addPending(list) {
+    [...list].forEach((f) => { if (!pending.some((p) => p.name === f.name && p.size === f.size)) pending.push(f); });
+    $("qFiles").value = ""; renderPending();
+  }
+  function wirePending() {
+    $("qFiles").addEventListener("change", (e) => addPending(e.target.files));
+    const dz = $("qDrop");
+    ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+    dz.addEventListener("drop", (e) => addPending(e.dataTransfer.files));
+    $("qFileList").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-rm]");
+      if (b) { pending.splice(Number(b.dataset.rm), 1); renderPending(); }
+    });
+  }
   function wireFirm() {
     const input = $("firm");
     input.addEventListener("input", () => {
@@ -322,6 +347,7 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
   function resetForm() {
     $("qform").reset();
     picked = null; $("firmId").readOnly = false; setStatus(""); closeList();
+    pending = []; renderPending();
     document.querySelectorAll("#qform .invalid").forEach((el) => el.classList.remove("invalid"));
     $("success").hidden = true; $("emailPanel").hidden = true; toast("");
     buildCsms(); render();
@@ -330,6 +356,7 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
 
   Q.wire = function () {
     wireFirm();
+    wirePending();
     $("catalog").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-step]");
       if (!b) return;
@@ -365,6 +392,7 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
       const s = readState();
       const problems = validate(s);
       if (problems.length) { toastErr("Add " + problems.join(", ") + " before creating the card."); return; }
+      if (pending.some((f) => f.size > IS.MAX_FILE_BYTES)) { toastErr("Remove the files over 25 MB (attach those in Asana directly)."); return; }
       busy = true; $("createBtn").disabled = true; toast("Creating the Asana card…");
       try {
         const res = await IS.api("createRequest", { request: payload(s) });
@@ -376,6 +404,20 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
           <span><button class="linkbtn" type="button" id="viewOnBoard">See it on the Builds board</button> · <button class="linkbtn" type="button" id="newQuote">Start a new quote</button></span>`;
         $("newQuote").addEventListener("click", resetForm);
         $("viewOnBoard").addEventListener("click", () => { resetForm(); IS.showTab("builds"); IS.board.load(true); });
+        if (pending.length) {
+          const files = pending.slice();
+          const line = document.createElement("span");
+          $("success").insertBefore(line, $("success").lastElementChild);
+          let done = 0; const failed = [];
+          line.textContent = `Attaching ${files.length} file${files.length === 1 ? "" : "s"}…`;
+          await IS.uploadFiles(res.task.gid, files, (f, ok, err) => {
+            if (ok) done++; else failed.push(f.name + " (" + err.message + ")");
+            line.textContent = `Attached ${done} of ${files.length} file${files.length === 1 ? "" : "s"}…`;
+          });
+          line.innerHTML = `${done} file${done === 1 ? "" : "s"} attached.` +
+            (failed.length ? ` <span class="err">Not attached: ${esc(failed.join(", "))}. Add them from the card on the Builds board.</span>` : "");
+          pending = []; renderPending();
+        }
         IS.board.markStale();
       } catch (err) {
         toastErr("The card wasn't created: " + err.message);

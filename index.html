@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/styles.css?v=5">
+  <link rel="stylesheet" href="assets/styles.css?v=6">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -97,7 +97,15 @@
               <textarea id="notes" placeholder="Anything the offshore rep should know: context from the call, links, preferences"></textarea>
             </label>
             <label class="f">Needed by (preference)<input type="date" id="needBy"></label>
-            <label class="f">Examples / files folder<input type="text" id="files" placeholder="Drive link to paper forms, letters…"></label>
+            <label class="f">Files link (optional)<input type="text" id="files" placeholder="Drive folder link"></label>
+            <div class="full qfiles">
+              <label class="dropzone" id="qDrop">
+                <input type="file" id="qFiles" multiple>
+                <span><strong>Attach files</strong>: paper forms, letters, reports to copy</span>
+                <span class="dz-sub">Uploaded to the Asana card when you create it · up to 25 MB each</span>
+              </label>
+              <div id="qFileList" class="files"></div>
+            </div>
           </div>
         </section>
 
@@ -156,10 +164,10 @@
     <div class="drawer-body" id="dBody"></div>
   </aside>
 
-  <script src="assets/config.js?v=5"></script>
-  <script src="assets/app.js?v=5"></script>
-  <script src="assets/quote.js?v=5"></script>
-  <script src="assets/board.js?v=5"></script>
-  <script src="assets/boot.js?v=5"></script>
+  <script src="assets/config.js?v=6"></script>
+  <script src="assets/app.js?v=6"></script>
+  <script src="assets/quote.js?v=6"></script>
+  <script src="assets/board.js?v=6"></script>
+  <script src="assets/boot.js?v=6"></script>
 </body>
 </html>

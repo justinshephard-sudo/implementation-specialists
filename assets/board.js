@@ -234,14 +234,27 @@
         </div>
       </section>
 
+      <section class="block" id="filesBlock">
+        <h3 id="filesHead"></h3>
+        <div id="fileList" class="files"></div>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" multiple>
+          <span><strong>Drop files here</strong> or <span class="linkbtn">choose files</span></span>
+          <span class="dz-sub">Attached to the Asana task · up to 25 MB each</span>
+        </label>
+        <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
+      </section>
+
       <section class="block">
         <h3>Comments</h3>
-        <div>${r.comments.map((c) => `<div class="comment"><div class="by">${esc(new Date(c.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}</div><div class="text">${esc(c.text)}</div></div>`).join("") || '<span class="hint" style="margin:0">No comments yet.</span>'}</div>
+        <div id="commentList">${r.comments.map(commentHtml).join("") || '<span class="hint" style="margin:0">No comments yet.</span>'}</div>
         <form id="commentForm" style="display:grid;gap:8px" novalidate>
           <label class="f">Add a comment<textarea id="cText" placeholder="Posts to the Asana task with your name"></textarea></label>
           <div class="savebar"><button class="btn" type="submit" id="cPost">Post comment</button><span class="toast" id="cToast" role="status"></span></div>
         </form>
       </section>`;
+
+    wireFiles();
 
     const fields = ["section", "assignee", "dueOn", "paymentStatus", "paidDate", "chargebeeId", "total", "delivered", "zight", "revisions", "offshoreHours", "closeReason"];
     const original = {};
@@ -286,11 +299,78 @@
       $("cPost").disabled = true; $("cToast").textContent = "Posting…";
       try {
         const res = await IS.api("addComment", { gid: r.gid, text });
-        r.comments.push(res.comment); renderDrawer();
+        r.comments.push(res.comment);
+        $("commentList").innerHTML = r.comments.map(commentHtml).join("");
+        $("cText").value = ""; $("cPost").disabled = false;
         $("cToast").textContent = "Posted.";
       } catch (err) { $("cToast").innerHTML = `<span class="err">Not posted: ${esc(err.message)}</span>`; $("cPost").disabled = false; }
     });
   }
+  function commentHtml(c) {
+    return `<div class="comment"><div class="by">${esc(new Date(c.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}</div><div class="text">${esc(c.text)}</div></div>`;
+  }
+
+  // ───────────── files in the drawer ─────────────
+  const EXT_LABEL = (name) => { const m = /\.([a-z0-9]{1,5})$/i.exec(name || ""); return m ? m[1].toUpperCase() : "FILE"; };
+  function renderFiles() {
+    const r = B.current;
+    r.files = r.files || [];
+    $("filesHead").textContent = "Files" + (r.files.length ? " · " + r.files.length : "");
+    $("fileList").innerHTML = r.files.length
+      ? r.files.map((f) => `<div class="file" data-file="${esc(f.gid)}">
+          <span class="ext">${esc(EXT_LABEL(f.name))}</span>
+          <button type="button" class="fname" data-open="${esc(f.gid)}" title="Open ${esc(f.name)}">${esc(f.name)}</button>
+          <span class="fmeta">${esc([IS.fmtSize(f.size), f.at && shortDate(f.at.slice(0, 10))].filter(Boolean).join(" · "))}</span>
+          <span class="factions"><button type="button" class="linkbtn danger" data-del="${esc(f.gid)}">Delete</button></span>
+        </div>`).join("")
+      : '<span class="hint" style="margin:0">No files yet.</span>';
+  }
+  async function addFiles(fileList) {
+    const r = B.current;
+    const files = [...fileList];
+    if (!files.length) return;
+    const status = $("uploadStatus");
+    const rows = files.map((f, i) => `<div id="up${i}"><span class="spin"></span> ${esc(f.name)} <span class="fmeta">${esc(IS.fmtSize(f.size))}</span></div>`);
+    status.innerHTML = rows.join("");
+    await IS.uploadFiles(r.gid, files, (f, res, err, i) => {
+      const row = $("up" + i);
+      if (res) { r.files.push(res); renderFiles(); if (row) row.remove(); }
+      else if (row) row.innerHTML = `<span class="err">${esc(f.name)} wasn't attached: ${esc(err.message)}</span>`;
+    });
+    $("fileInput").value = "";
+  }
+  function wireFiles() {
+    renderFiles();
+    $("fileInput").addEventListener("change", (e) => addFiles(e.target.files));
+    const dz = $("dropzone");
+    ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+    dz.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+    $("fileList").addEventListener("click", async (e) => {
+      const open = e.target.closest("[data-open]");
+      if (open) {
+        try { await IS.openFile(open.dataset.open); }
+        catch (err) { alertInline($("filesBlock"), err.message); }
+        return;
+      }
+      const del = e.target.closest("[data-del]");
+      if (del) {
+        const row = del.closest(".file");
+        row.querySelector(".factions").innerHTML = `<span class="fmeta">Delete from Asana?</span> <button type="button" class="linkbtn danger" data-confirm="${esc(del.dataset.del)}">Delete</button> <button type="button" class="linkbtn" data-cancel>Keep</button>`;
+        return;
+      }
+      if (e.target.closest("[data-cancel]")) { renderFiles(); return; }
+      const conf = e.target.closest("[data-confirm]");
+      if (conf) {
+        conf.disabled = true;
+        try {
+          await IS.api("deleteFile", { fileGid: conf.dataset.confirm });
+          B.current.files = B.current.files.filter((f) => f.gid !== conf.dataset.confirm); renderFiles();
+        } catch (err) { alertInline($("filesBlock"), err.message); renderFiles(); }
+      }
+    });
+  }
+
   function alertInline(block, msg) {
     const el = document.createElement("div"); el.className = "err"; el.textContent = "Couldn't update: " + msg;
     block.appendChild(el); setTimeout(() => el.remove(), 5000);
