@@ -28,7 +28,8 @@
       box.innerHTML = `<div class="cat-head"><h3>${esc(c.cat)}</h3><span class="cat-sum" id="sum_${c.key}"></span></div>` +
         c.items.map((it) => `
           <div class="item" id="row_${it.id}">
-            <div><div class="name">${esc(it.name)}</div><div class="unit">${money(it.price)} ${esc(it.unit)}</div></div>
+            <div><div class="name">${esc(it.name)}</div><div class="unit">${money(it.price)} ${esc(it.unit)}</div>
+              <label class="waive-toggle" hidden><input type="checkbox" id="w_${it.id}"> Waive</label></div>
             <div class="stepper">
               <button type="button" aria-label="Fewer ${esc(it.name)}" data-step="-1" data-id="${it.id}">−</button>
               <input type="number" min="0" step="1" value="0" id="q_${it.id}" aria-label="${esc(it.name)} quantity">
@@ -54,11 +55,13 @@
     const lines = [];
     IS.config.catalog.forEach((c) => c.items.forEach((it) => {
       const q = Math.max(0, parseInt($("q_" + it.id).value, 10) || 0);
-      if (q > 0) lines.push(Object.assign({}, it, { key: c.key, qty: q, amount: q * it.price, what: $("s_" + c.key).value.trim() }));
+      const waived = $("w_" + it.id).checked;
+      if (q > 0) lines.push(Object.assign({}, it, { key: c.key, qty: q, amount: q * it.price, waived, charged: waived ? 0 : q * it.price, what: $("s_" + c.key).value.trim() }));
     }));
     const list = lines.reduce((s, l) => s + l.amount, 0);
-    const waived = $("waived").checked;
-    return { lines, list, waived, total: waived ? 0 : list,
+    const total = lines.reduce((s, l) => s + l.charged, 0);
+    const waivedValue = list - total;
+    return { lines, list, total, waivedValue, allWaived: lines.length > 0 && total === 0, someWaived: waivedValue > 0,
       firm: $("firm").value.trim(), firmId: $("firmId").value.trim(), dmName: $("dmName").value.trim(), dmEmail: $("dmEmail").value.trim(),
       csmEmail: $("csm").value, pa: $("pa").value, notes: $("notes").value.trim(), needBy: $("needBy").value, files: $("files").value.trim() };
   }
@@ -73,9 +76,13 @@
       let catTotal = 0, any = false;
       c.items.forEach((it) => {
         const q = Math.max(0, parseInt($("q_" + it.id).value, 10) || 0);
+        const w = $("w_" + it.id);
+        if (q === 0) w.checked = false;
+        w.closest(".waive-toggle").hidden = q === 0;
         $("row_" + it.id).classList.toggle("on", q > 0);
-        $("a_" + it.id).textContent = q > 0 ? money(q * it.price) : "—";
-        catTotal += q * it.price; if (q > 0) any = true;
+        $("row_" + it.id).classList.toggle("is-waived", q > 0 && w.checked);
+        $("a_" + it.id).innerHTML = q === 0 ? "—" : w.checked ? `<s>${money(q * it.price)}</s><span class="wv">Waived</span>` : money(q * it.price);
+        catTotal += w.checked ? 0 : q * it.price; if (q > 0) any = true;
       });
       $("sum_" + c.key).textContent = any ? money(catTotal) : "";
       $("det_" + c.key).hidden = !any;
@@ -85,20 +92,26 @@
 
     $("tItems").textContent = s.lines.reduce((n, l) => n + l.qty, 0);
     $("tList").textContent = money(s.list);
+    $("tWaivedRow").hidden = !s.someWaived;
+    $("tWaived").textContent = "−" + money(s.waivedValue);
     $("tTotal").textContent = money(s.total);
+    const master = $("waived");
+    master.checked = s.allWaived;
+    master.indeterminate = s.someWaived && !s.allWaived;
 
     const min = IS.config.minOrder || 0;
     const flags = [];
-    if (s.waived && s.list > 0) flags.push(`<span class="pill info">Waived · ${money(s.list)} list value recorded</span>`);
-    if (!s.waived && s.list > 0 && s.list < min) flags.push(`<span class="pill warn">Below the proposed ${money(min)} minimum order</span>`);
-    if (!s.waived && s.list >= min && s.list > 0) flags.push(`<span class="pill ok">Meets ${money(min)} minimum</span>`);
+    if (s.allWaived) flags.push(`<span class="pill info">Fully waived · ${money(s.list)} list value recorded</span>`);
+    else if (s.someWaived) flags.push(`<span class="pill info">${money(s.waivedValue)} waived</span>`);
+    if (s.total > 0 && s.total < min) flags.push(`<span class="pill warn">Below the proposed ${money(min)} minimum order</span>`);
+    if (s.total >= min && s.total > 0) flags.push(`<span class="pill ok">Meets ${money(min)} minimum</span>`);
     if (s.lines.some((l) => l.key === "train") && watched && !watched.checked) flags.push(`<span class="pill warn">Training call before video watched</span>`);
     $("flags").innerHTML = flags.join("");
     $("validCap").textContent = "Valid until " + fmtDate(validUntil());
 
     const rows = s.lines.map((l) => `<tr>
         <td><div>${esc(l.name)}${l.qty > 1 ? ` × ${l.qty}` : ""}</div>${l.what ? `<div class="what">${esc(l.what)}</div>` : ""}</td>
-        <td class="r mono">${money(l.amount)}</td></tr>`).join("");
+        <td class="r mono">${l.waived ? `<s class="was">${money(l.amount)}</s><br>${money(0)}` : money(l.amount)}</td></tr>`).join("");
     $("paper").innerHTML = `
       <div class="ph">
         <div><img class="brand-logo" src="assets/lawmatics-logo.svg" alt="Lawmatics" width="132" height="22"><div class="doc">Services quote</div></div>
@@ -112,10 +125,10 @@
       </div>
       ${s.lines.length ? `<table><thead><tr><th>Item</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="tot"><span class="lab">Total</span><span class="val">${money(s.total)}</span></div>
-        ${s.waived ? `<div class="waived">Waived by your Customer Success Manager (list value ${money(s.list)})</div>` : ""}`
+        ${s.someWaived ? `<div class="waived">${s.allWaived ? "Waived" : "Includes " + money(s.waivedValue) + " waived"} by your Customer Success Manager</div>` : ""}`
         : `<div class="empty">Add a service to build the quote.</div>`}
       <ul class="terms">
-        <li>${s.waived ? "No charge for this request." : "Billed in full once you approve."} Payments are non-refundable once work has begun.</li>
+        <li>${s.allWaived ? "No charge for this request." : "Billed in full once you approve."} Payments are non-refundable once work has begun.</li>
         <li>Includes a short walkthrough video and one round of revisions.</li>
         <li>Anything not listed is quoted separately.</li>
         <li>To approve, reply "Approved" to the quote email.</li>
@@ -124,10 +137,10 @@
   }
 
   function buildEmail(s) {
-    const items = s.lines.map((l) => `• ${l.name}${l.qty > 1 ? ` (×${l.qty})` : ""}: ${l.what || "[what it does]"}: ${money(l.amount)}`).join("\n");
-    const totalLine = s.waived
+    const items = s.lines.map((l) => `• ${l.name}${l.qty > 1 ? ` (×${l.qty})` : ""}: ${l.what || "[what it does]"}: ${l.waived ? `$0 (waived, normally ${money(l.amount)})` : money(l.amount)}`).join("\n");
+    const totalLine = s.allWaived
       ? `Total: $0. This work has been waived (list value ${money(s.list)}).`
-      : `Total: ${money(s.total)}, billed in full once you approve.`;
+      : `Total: ${money(s.total)}, billed in full once you approve.` + (s.someWaived ? ` This includes ${money(s.waivedValue)} in waived items.` : "");
     return `Subject: Your Lawmatics services quote: ${s.firm || "[Firm name]"}
 
 Hi ${s.dmName ? s.dmName.split(" ")[0] : "[Name]"},
@@ -168,8 +181,8 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
       });
     });
     return { firm: s.firm, firmId: s.firmId, dmName: s.dmName, dmEmail: s.dmEmail, csmEmail: s.csmEmail,
-      practiceArea: s.pa, notes: s.notes, needBy: s.needBy, files: s.files, waived: s.waived,
-      lines: s.lines.map((l) => ({ id: l.id, qty: l.qty })), summaries, details };
+      practiceArea: s.pa, notes: s.notes, needBy: s.needBy, files: s.files,
+      lines: s.lines.map((l) => ({ id: l.id, qty: l.qty, waived: l.waived })), summaries, details };
   }
 
   function resetForm() {
@@ -188,7 +201,14 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
       inp.value = Math.max(0, (parseInt(inp.value, 10) || 0) + parseInt(b.dataset.step, 10));
       render();
     });
-    $("qform").addEventListener("input", render);
+    $("qform").addEventListener("input", (e) => {
+      if (e.target.id === "waived") {
+        IS.config.catalog.forEach((c) => c.items.forEach((it) => {
+          if ((parseInt($("q_" + it.id).value, 10) || 0) > 0) $("w_" + it.id).checked = e.target.checked;
+        }));
+      }
+      render();
+    });
     $("hideEmail").addEventListener("click", () => { $("emailPanel").hidden = true; });
 
     $("copyBtn").addEventListener("click", () => {

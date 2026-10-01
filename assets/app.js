@@ -117,7 +117,7 @@
   }
   const mockDb = [
     mockReq(1, SECTIONS[0], "Sample Harper Law", "5531", ["Form – conditional logic", "Email template"], 35),
-    mockReq(2, SECTIONS[0], "Sample Ortiz & Co", "5540", ["Automation – complex"], 40, { validUntil: daysFromNow(-2) }),
+    mockReq(2, SECTIONS[0], "Sample Ortiz & Co", "5540", ["Automation – complex", "Email template"], 40, { list: 45, validUntil: daysFromNow(-2) }),
     mockReq(3, SECTIONS[1], "Sample Reyes Family Law", "5502", ["Document – standard", "Document – conditional logic"], 30,
       { paymentStatus: "Paid", paidDate: daysFromNow(-1), chargebeeId: "inv_sample_1" }),
     mockReq(4, SECTIONS[2], "Sample Kline Estate", "5488", ["Automation – simple", "Email template pack (5)"], 45,
@@ -166,9 +166,11 @@
       case "createRequest": {
         const r = p.request;
         const items = MOCK_CATALOG.flatMap((c) => c.items);
-        const list = r.lines.reduce((n, l) => n + l.qty * ((items.find((i) => i.id === l.id) || {}).price || 0), 0);
-        const card = mockReq(mockDb.length + 1, SECTIONS[0], r.firm, r.firmId, r.lines.map((l) => (items.find((i) => i.id === l.id) || {}).name), r.waived ? 0 : list,
-          { list, paymentStatus: r.waived ? "Waived" : "Not invoiced", quoteSent: IS.todayIso(), validUntil: daysFromNow(30) });
+        const price = (l) => l.qty * ((items.find((i) => i.id === l.id) || {}).price || 0);
+        const list = r.lines.reduce((n, l) => n + price(l), 0);
+        const total = r.lines.reduce((n, l) => n + (l.waived ? 0 : price(l)), 0);
+        const card = mockReq(mockDb.length + 1, SECTIONS[0], r.firm, r.firmId, r.lines.map((l) => (items.find((i) => i.id === l.id) || {}).name), total,
+          { list, paymentStatus: total === 0 ? "Waived" : "Not invoiced", quoteSent: IS.todayIso(), validUntil: daysFromNow(30) });
         mockDb.unshift(card);
         return wait({ quoteId: "Q-SAMPLE-" + r.firmId, task: { gid: card.gid, url: "#", name: card.name } });
       }

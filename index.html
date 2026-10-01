@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/styles.css?v=3">
+  <link rel="stylesheet" href="assets/styles.css?v=4">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -105,8 +105,8 @@
 
         <section class="block" aria-labelledby="h-waive">
           <h2 id="h-waive">Waiver</h2>
-          <label class="check"><input type="checkbox" id="waived"> Waive the charge (account is in the 6-month upsell window)</label>
-          <p class="hint" style="margin:0">Waived requests go through the full process. The list value is still recorded for reporting. Nothing is charged in Chargebee.</p>
+          <label class="check"><input type="checkbox" id="waived"> Waive every item on this quote</label>
+          <p class="hint" style="margin:0">To waive only some items, tick <strong>Waive</strong> next to each one under Services. Waivers are for accounts in the 6-month upsell window. Waived items still go through the full process, their list value is recorded for reporting, and they aren't charged in Chargebee.</p>
         </section>
       </div>
 
@@ -114,6 +114,7 @@
         <div class="totals" aria-live="polite">
           <div class="row"><span>Line items</span><span id="tItems">0</span></div>
           <div class="row"><span>List value</span><span id="tList">$0</span></div>
+          <div class="row" id="tWaivedRow" hidden><span>Waived</span><span id="tWaived">−$0</span></div>
           <div class="row big-row"><span>Quote total</span><span class="big" id="tTotal">$0</span></div>
           <div class="flags" id="flags"></div>
         </div>
@@ -151,10 +152,10 @@
     <div class="drawer-body" id="dBody"></div>
   </aside>
 
-  <script src="assets/config.js?v=3"></script>
-  <script src="assets/app.js?v=3"></script>
-  <script src="assets/quote.js?v=3"></script>
-  <script src="assets/board.js?v=3"></script>
-  <script src="assets/boot.js?v=3"></script>
+  <script src="assets/config.js?v=4"></script>
+  <script src="assets/app.js?v=4"></script>
+  <script src="assets/quote.js?v=4"></script>
+  <script src="assets/board.js?v=4"></script>
+  <script src="assets/boot.js?v=4"></script>
 </body>
 </html>

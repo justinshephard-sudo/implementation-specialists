@@ -49,7 +49,9 @@
     if (r.section === sections()[0] && r.validUntil && r.validUntil < t) f.push(["danger", "Quote expired"]);
     if (r.section !== sections()[0] && r.section !== lastSection() && r.dueOn && r.dueOn < t) f.push(["danger", "Overdue"]);
     if (r.section === "Review Video Sent" && r.delivered && addBusinessDays(r.delivered, BUSINESS_DAYS_TO_ACCEPT) <= t) f.push(["warn", "Auto-accept due"]);
+    const waivedAmt = (Number(r.list) || 0) - (Number(r.total) || 0);
     if (r.paymentStatus === "Waived") f.push(["info", "Waived"]);
+    else if (waivedAmt > 0) f.push(["info", money(waivedAmt) + " waived"]);
     else if (r.section !== sections()[0] && r.paymentStatus && r.paymentStatus !== "Paid") f.push(["warn", r.paymentStatus]);
     if (r.section !== sections()[0] && r.section !== lastSection() && !r.assignee) f.push(["muted", "Unassigned"]);
     return f;
@@ -88,13 +90,14 @@
     const expired = quotes.filter((r) => r.validUntil && r.validUntil < today());
     const active = rows.filter((r) => r.section !== sections()[0] && r.section !== lastSection());
     const overdue = active.filter((r) => r.dueOn && r.dueOn < today());
-    const waived = rows.filter((r) => r.paymentStatus === "Waived" && inPeriod(r.quoteSent));
+    const waivedAmt = (r) => Math.max(0, (Number(r.list) || 0) - (Number(r.total) || 0));
+    const waived = rows.filter((r) => waivedAmt(r) > 0 && inPeriod(r.quoteSent));
 
     $("summary").innerHTML = [
       ["Revenue · " + label, money(sum(paid, "total")), `${paid.length} paid request${paid.length === 1 ? "" : "s"}`],
       ["Quotes out", money(sum(quotes, "total")), `${quotes.length} open${expired.length ? ` · ${expired.length} expired` : ""}`],
       ["Builds in progress", String(active.length), `${money(sum(active, "total"))} value${overdue.length ? ` · ${overdue.length} overdue` : ""}`],
-      ["Waived · " + label, money(sum(waived, "list")), `${waived.length} request${waived.length === 1 ? "" : "s"} (list value)`],
+      ["Waived · " + label, money(waived.reduce((n, r) => n + waivedAmt(r), 0)), `across ${waived.length} request${waived.length === 1 ? "" : "s"} (list value)`],
     ].map(([k, v, s]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
 
     const byDue = (a, b) => (a.dueOn || "9999") < (b.dueOn || "9999") ? -1 : (a.dueOn || "9999") > (b.dueOn || "9999") ? 1 : 0;
