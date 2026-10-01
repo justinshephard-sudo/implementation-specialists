@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Services Quote Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <!-- Sign-in gate: shown until a verified @lawmatics.com Google account signs in -->
+  <div class="wrap" id="gate">
+    <div class="gate">
+      <div class="eyebrow">Implementation Specialists</div>
+      <h1>Services Quote Builder</h1>
+      <p>Sign in with your Lawmatics Google account to build and send a services quote.</p>
+      <div id="gsiButton"></div>
+      <p class="gerr" id="gateErr" hidden></p>
+    </div>
+  </div>
+
+  <div class="wrap" id="app" hidden>
+    <header class="top">
+      <div>
+        <div class="eyebrow">Implementation Specialists · Additional Services</div>
+        <h1>Services Quote Builder</h1>
+      </div>
+      <div class="who"><div class="avatar" id="avatar" aria-hidden="true"></div><span>Signed in as <strong id="whoName"></strong> · <button class="linkbtn" type="button" id="signOut">Sign out</button></span></div>
+    </header>
+
+    <div class="mockbar" role="note" id="mockBar" hidden>
+      <span><strong>Test mode.</strong> Sample prices and data, no sign-in, and nothing is written to Asana.</span>
+    </div>
+
+    <form class="grid" id="qform" novalidate>
+      <div class="col">
+        <section class="block" aria-labelledby="h-acct">
+          <h2 id="h-acct"><span class="step">1</span>Account</h2>
+          <div class="fields">
+            <label class="f">Firm name <span class="req">*</span><input type="text" id="firm" autocomplete="off"></label>
+            <label class="f">Firm ID <span class="req">*</span><input type="text" id="firmId" inputmode="numeric" autocomplete="off"></label>
+            <label class="f">Decision-maker name<input type="text" id="dmName" autocomplete="off"></label>
+            <label class="f">Decision-maker email <span class="req">*</span><input type="email" id="dmEmail" autocomplete="off"></label>
+            <label class="f">CSM (cc'd on the quote)<select id="csm"><option value="">Select CSM…</option></select></label>
+            <label class="f">Practice area
+              <select id="pa">
+                <option value="">Select…</option>
+                <option>Personal Injury</option><option>Family Law</option><option>Estate Planning</option><option>Immigration</option>
+                <option>Criminal Defense</option><option>Employment Law</option><option>Bankruptcy</option><option>Business</option><option>Other</option>
+              </select>
+            </label>
+            <label class="f full">Notes
+              <textarea id="notes" placeholder="Anything the offshore rep should know: context from the call, links, preferences"></textarea>
+            </label>
+            <label class="f">Needed by (preference)<input type="date" id="needBy"></label>
+            <label class="f">Examples / files folder<input type="text" id="files" placeholder="Drive link to paper forms, letters…"></label>
+          </div>
+        </section>
+
+        <section class="block" aria-labelledby="h-svc">
+          <h2 id="h-svc"><span class="step">2</span>Services</h2>
+          <p class="hint">Set a quantity for each item. Detail questions open for each service you add.</p>
+          <div id="catalog" style="display:grid;gap:12px"></div>
+        </section>
+
+        <section class="block" aria-labelledby="h-waive">
+          <h2 id="h-waive"><span class="step">3</span>Waiver</h2>
+          <label class="check"><input type="checkbox" id="waived"> Waive the charge (account is in the 6-month upsell window)</label>
+          <p class="hint" style="margin:0">Waived requests go through the full process. The list value is still recorded for reporting. Nothing is charged in Chargebee.</p>
+        </section>
+      </div>
+
+      <aside class="desk" aria-label="Quote">
+        <div class="totals" aria-live="polite">
+          <div class="row"><span>Line items</span><span id="tItems">0</span></div>
+          <div class="row"><span>List value</span><span id="tList">$0</span></div>
+          <div class="row big-row"><span>Quote total</span><span class="big" id="tTotal">$0</span></div>
+          <div class="flags" id="flags"></div>
+        </div>
+
+        <div class="paper-wrap">
+          <div class="paper-cap"><span>Quote card, ready to screenshot</span><span id="validCap"></span></div>
+          <div class="paper" id="paper"></div>
+        </div>
+
+        <div class="btns">
+          <button class="btn" type="button" id="copyBtn">Copy quote email</button>
+          <button class="btn primary" type="submit" id="createBtn">Quote sent – create card</button>
+          <div class="toast full" id="toast" role="status"></div>
+        </div>
+
+        <div class="success" id="success" hidden></div>
+
+        <div class="panel" id="emailPanel" hidden>
+          <h3>Quote email <button class="btn small" type="button" id="hideEmail">Hide</button></h3>
+          <pre class="email" id="emailText" tabindex="0"></pre>
+        </div>
+      </aside>
+    </form>
+  </div>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
