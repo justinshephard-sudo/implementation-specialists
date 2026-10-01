@@ -1,346 +1,178 @@
-/* Services Quote Builder — talks to the Apps Script proxy (see apps-script/Code.gs).
-   ?mock=1 skips sign-in, uses MOCK_CONFIG below, and never writes to Asana. */
+/* Core: config, sign-in, API client, shared helpers. Views live in quote.js and board.js; boot.js starts the app.
+   ?mock=1 skips sign-in, uses fake sample data, and never writes to Asana. */
 (function () {
   "use strict";
   const CFG = window.APP_CONFIG || {};
   const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
-  // Test-mode data only. Prices here are fake samples; real prices are served by the API after sign-in.
-  const MOCK_CONFIG = {
-    minOrder: 50, quoteValidDays: 30,
-    csms: [
-      { name: "Elliott Jones", email: "elliott@example.com" },
-      { name: "Kennedy Wickham", email: "kennedy@example.com" },
-    ],
-    catalog: [
-      { cat: "Forms", key: "form", items: [
-        { id: "form_std", name: "Form – standard", price: 10, unit: "per form" },
-        { id: "form_logic", name: "Form – conditional logic", price: 20, unit: "per form" }],
-        details: [{ id: "pages", label: "Page count", type: "text" }, { id: "dest", label: "Where should responses go?", type: "text" }] },
-      { cat: "Documents", key: "doc", items: [
-        { id: "doc_std", name: "Document – standard", price: 10, unit: "per document" },
-        { id: "doc_logic", name: "Document – conditional logic", price: 20, unit: "per document" }],
-        details: [{ id: "merge", label: "Merge fields needed", type: "text" }, { id: "sig", label: "Signature required", type: "check" }] },
-      { cat: "Reports", key: "rep", items: [
-        { id: "rep_std", name: "Report – standard", price: 10, unit: "per report" },
-        { id: "rep_cx", name: "Report – complex or dashboard", price: 20, unit: "per report" }],
-        details: [{ id: "data", label: "Data to include and filters", type: "text" }, { id: "aud", label: "Who reads it, how often", type: "text" }] },
-      { cat: "Automations", key: "auto", items: [
-        { id: "auto_simple", name: "Automation – simple", price: 30, unit: "1 trigger, up to 3 emails" },
-        { id: "auto_cx", name: "Automation – complex", price: 40, unit: "per automation" }],
-        details: [{ id: "trigger", label: "Trigger (what starts it)", type: "text" }, { id: "steps", label: "Steps, timing, # of emails/texts", type: "text" }, { id: "notify", label: "Who gets notified", type: "text" }] },
-      { cat: "Email templates", key: "email", items: [
-        { id: "email_one", name: "Email template", price: 5, unit: "per template" },
-        { id: "email_pack", name: "Email template pack (5)", price: 15, unit: "per pack" }],
-        details: [{ id: "copy", label: "Copy provided by firm", type: "check" }, { id: "attached", label: "Attached to an automation", type: "check" }] },
-      { cat: "Training", key: "train", items: [
-        { id: "training", name: "Additional training call", price: 25, unit: "per hour" }],
-        details: [{ id: "topic", label: "Topic / which build", type: "text" }, { id: "watched", label: "Customer has watched the Zight video", type: "check" }] },
-    ],
-  };
-
-  const $ = (id) => document.getElementById(id);
-  const money = (n) => "$" + Number(n).toLocaleString("en-US");
-  const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-  let idToken = null;
-  let user = null;
-  let config = null;
-  let busy = false;
+  const IS = (window.IS = {
+    CFG, MOCK,
+    user: null, idToken: null, config: null,
+    $: (id) => document.getElementById(id),
+    esc: (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    money: (n) => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }),
+    fmtDate: (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    // "2026-10-05" → "Oct 5" (or with year if not this year)
+    shortDate(iso) {
+      if (!iso) return "";
+      const d = new Date(iso + "T12:00:00");
+      const opts = { month: "short", day: "numeric" };
+      if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+      return d.toLocaleDateString("en-US", opts);
+    },
+    todayIso() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); },
+    initials: (name) => String(name || "?").split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase(),
+  });
 
   // ───────────── API ─────────────
-  async function api(action, payload) {
-    if (MOCK) return mockApi(action, payload);
+  IS.api = async function (action, payload) {
+    if (MOCK) return IS.mockApi(action, payload || {});
     if (!CFG.API_URL) throw new Error("API_URL is not set in assets/config.js.");
     // text/plain keeps this a "simple" request, so the browser skips the CORS preflight Apps Script can't answer.
-    const res = await fetch(CFG.API_URL, { method: "POST", body: JSON.stringify(Object.assign({ idToken, action }, payload || {})) });
+    const res = await fetch(CFG.API_URL, { method: "POST", body: JSON.stringify(Object.assign({ idToken: IS.idToken, action }, payload || {})) });
     const data = await res.json();
     if (!data.ok) {
-      if (data.error === "unauthorized") { signOut("Your sign-in expired. Sign in again."); }
+      if (data.error === "unauthorized") IS.signOut("Your sign-in expired. Sign in again.");
       throw new Error(data.message || data.error || "Request failed");
     }
     return data;
-  }
-  function mockApi(action, payload) {
-    if (action === "getConfig") return Promise.resolve({ ok: true, config: MOCK_CONFIG });
-    if (action === "createRequest") {
-      const r = payload.request;
-      return new Promise((ok) => setTimeout(() => ok({ ok: true, quoteId: "Q-MOCK-" + r.firmId,
-        task: { url: "#", name: `${r.firm} (${r.firmId}) – Services request` } }), 500));
-    }
-    return Promise.resolve({ ok: true });
-  }
+  };
 
   // ───────────── Sign-in ─────────────
   function decodeJwt(t) {
-    try { return JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch (e) { return null; }
+    try { return JSON.parse(decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))); } catch (e) { return null; }
   }
-  function onCredential(resp) {
+  IS.onCredential = function (resp) {
     const claims = decodeJwt(resp.credential);
     if (!claims || claims.hd !== CFG.ALLOWED_DOMAIN) { gateError("Use your @" + CFG.ALLOWED_DOMAIN + " Google account."); return; }
-    idToken = resp.credential;
-    user = { name: claims.name || claims.email, email: claims.email };
-    try { sessionStorage.setItem("is_idt", idToken); } catch (e) { /* storage blocked */ }
-    start();
-  }
-  function gateError(msg) { const el = $("gateErr"); el.textContent = msg; el.hidden = !msg; }
-  function signOut(msg) {
-    idToken = null; user = null;
+    IS.idToken = resp.credential;
+    IS.user = { name: claims.name || claims.email, email: (claims.email || "").toLowerCase() };
+    try { sessionStorage.setItem("is_idt", IS.idToken); } catch (e) { /* storage blocked */ }
+    IS.start();
+  };
+  function gateError(msg) { const el = IS.$("gateErr"); el.textContent = msg; el.hidden = !msg; }
+  IS.signOut = function (msg) {
+    IS.idToken = null; IS.user = null;
     try { sessionStorage.removeItem("is_idt"); } catch (e) { /* ignore */ }
     if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
-    $("app").hidden = true; $("gate").hidden = false; gateError(msg || "");
-  }
+    IS.$("app").hidden = true; IS.$("gate").hidden = false; gateError(msg || "");
+    initGsi();
+  };
   function initGsi() {
     if (!window.google || !google.accounts) { setTimeout(initGsi, 150); return; }
-    google.accounts.id.initialize({ client_id: CFG.CLIENT_ID, callback: onCredential, hd: CFG.ALLOWED_DOMAIN, auto_select: true });
-    google.accounts.id.renderButton($("gsiButton"), { theme: "outline", size: "large", text: "signin_with" });
+    google.accounts.id.initialize({ client_id: CFG.CLIENT_ID, callback: IS.onCredential, hd: CFG.ALLOWED_DOMAIN, auto_select: true });
+    google.accounts.id.renderButton(IS.$("gsiButton"), { theme: "outline", size: "large", text: "signin_with" });
     google.accounts.id.prompt();
   }
-
-  // ───────────── App start ─────────────
-  async function start() {
-    $("gate").hidden = true; $("app").hidden = false;
-    $("whoName").textContent = user.name;
-    $("avatar").textContent = user.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-    try {
-      config = (await api("getConfig")).config;
-    } catch (e) { toastErr("Couldn't load the price list: " + e.message); return; }
-    buildCsms(); buildCatalog(); render();
-  }
-
-  function buildCsms() {
-    const sel = $("csm");
-    sel.innerHTML = '<option value="">Select CSM…</option>' +
-      (config.csms || []).map((c) => `<option value="${esc(c.email)}">${esc(c.name)}</option>`).join("");
-    const me = (config.csms || []).find((c) => c.email === (user.email || "").toLowerCase());
-    if (me) sel.value = me.email;
-  }
-
-  function buildCatalog() {
-    const catEl = $("catalog");
-    catEl.innerHTML = "";
-    config.catalog.forEach((c) => {
-      const box = document.createElement("div");
-      box.className = "cat";
-      box.innerHTML = `<div class="cat-head"><h3>${esc(c.cat)}</h3><span class="cat-sum" id="sum_${c.key}"></span></div>` +
-        c.items.map((it) => `
-          <div class="item" id="row_${it.id}">
-            <div><div class="name">${esc(it.name)}</div><div class="unit">${money(it.price)} ${esc(it.unit)}</div></div>
-            <div class="stepper">
-              <button type="button" aria-label="Fewer ${esc(it.name)}" data-step="-1" data-id="${it.id}">−</button>
-              <input type="number" min="0" step="1" value="0" id="q_${it.id}" aria-label="${esc(it.name)} quantity">
-              <button type="button" aria-label="More ${esc(it.name)}" data-step="1" data-id="${it.id}">+</button>
-            </div>
-            <div class="amt" id="a_${it.id}">—</div>
-          </div>`).join("") +
-        `<div class="details" id="det_${c.key}" hidden>
-          <div class="dlabel">${esc(c.cat)} details</div>
-          <div class="fields">
-            <label class="f full">What it does (shown on the quote)<input type="text" id="s_${c.key}" placeholder="One line for the quote email"></label>
-            ${c.details.map((d) => d.type === "check"
-              ? `<label class="check full"><input type="checkbox" id="d_${c.key}_${d.id}"> ${esc(d.label)}</label>`
-              : `<label class="f">${esc(d.label)}<input type="text" id="d_${c.key}_${d.id}"></label>`).join("")}
-          </div>
-          ${c.key === "train" ? `<div class="note warn" id="trainWarn" hidden>Training calls are a last resort. Offer one only after the customer has watched the walkthrough video.</div>` : ""}
-        </div>`;
-      catEl.appendChild(box);
-    });
-  }
-
-  // ───────────── State + render ─────────────
-  function readState() {
-    const lines = [];
-    config.catalog.forEach((c) => c.items.forEach((it) => {
-      const q = Math.max(0, parseInt($("q_" + it.id).value, 10) || 0);
-      if (q > 0) lines.push(Object.assign({}, it, { key: c.key, qty: q, amount: q * it.price, what: $("s_" + c.key).value.trim() }));
-    }));
-    const list = lines.reduce((s, l) => s + l.amount, 0);
-    const waived = $("waived").checked;
-    const csmSel = $("csm");
-    return { lines, list, waived, total: waived ? 0 : list,
-      firm: $("firm").value.trim(), firmId: $("firmId").value.trim(), dmName: $("dmName").value.trim(), dmEmail: $("dmEmail").value.trim(),
-      csmEmail: csmSel.value, csmName: csmSel.value ? csmSel.options[csmSel.selectedIndex].text : "",
-      pa: $("pa").value, notes: $("notes").value.trim(), needBy: $("needBy").value, files: $("files").value.trim() };
-  }
-
-  function validUntil() { return new Date(Date.now() + (config.quoteValidDays || 30) * 864e5); }
-
-  function render() {
-    if (!config) return;
-    const s = readState();
-    const today = new Date();
-    config.catalog.forEach((c) => {
-      let catTotal = 0, any = false;
-      c.items.forEach((it) => {
-        const q = Math.max(0, parseInt($("q_" + it.id).value, 10) || 0);
-        $("row_" + it.id).classList.toggle("on", q > 0);
-        $("a_" + it.id).textContent = q > 0 ? money(q * it.price) : "—";
-        catTotal += q * it.price; if (q > 0) any = true;
-      });
-      $("sum_" + c.key).textContent = any ? money(catTotal) : "";
-      $("det_" + c.key).hidden = !any;
-    });
-    const watched = $("d_train_watched");
-    if ($("trainWarn")) $("trainWarn").hidden = watched.checked;
-
-    $("tItems").textContent = s.lines.reduce((n, l) => n + l.qty, 0);
-    $("tList").textContent = money(s.list);
-    $("tTotal").textContent = money(s.total);
-
-    const min = config.minOrder || 0;
-    const flags = [];
-    if (s.waived && s.list > 0) flags.push(`<span class="pill info">Waived · ${money(s.list)} list value recorded</span>`);
-    if (!s.waived && s.list > 0 && s.list < min) flags.push(`<span class="pill warn">Below the proposed ${money(min)} minimum order</span>`);
-    if (!s.waived && s.list >= min && s.list > 0) flags.push(`<span class="pill ok">Meets ${money(min)} minimum</span>`);
-    if (s.lines.some((l) => l.key === "train") && watched && !watched.checked) flags.push(`<span class="pill warn">Training call before video watched</span>`);
-    $("flags").innerHTML = flags.join("");
-    $("validCap").textContent = "Valid until " + fmtDate(validUntil());
-
-    const rows = s.lines.map((l) => `<tr>
-        <td><div>${esc(l.name)}${l.qty > 1 ? ` × ${l.qty}` : ""}</div>${l.what ? `<div class="what">${esc(l.what)}</div>` : ""}</td>
-        <td class="r mono">${money(l.amount)}</td></tr>`).join("");
-    $("paper").innerHTML = `
-      <div class="ph">
-        <div><div class="brand">Lawmatics</div><div class="doc">Services quote</div></div>
-        <div class="qno">${s.firmId ? "Q-" + today.toISOString().slice(2, 10).replace(/-/g, "") + "-" + esc(s.firmId) : "Quote"}<br>${fmtDate(today)}</div>
-      </div>
-      <div class="meta">
-        <div><div class="k">Prepared for</div><div class="v">${esc(s.firm || "Firm name")}${s.firmId ? ` <span style="color:var(--paper-muted)">#${esc(s.firmId)}</span>` : ""}</div></div>
-        <div><div class="k">Attention</div><div class="v">${esc(s.dmName || "Decision-maker")}</div></div>
-        <div><div class="k">Valid until</div><div class="v">${fmtDate(validUntil())}</div></div>
-        <div><div class="k">Delivery</div><div class="v">14+ days after payment</div></div>
-      </div>
-      ${s.lines.length ? `<table><thead><tr><th>Item</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="tot"><span class="lab">Total</span><span class="val">${money(s.total)}</span></div>
-        ${s.waived ? `<div class="waived">Waived by your Customer Success Manager (list value ${money(s.list)})</div>` : ""}`
-        : `<div class="empty">Add a service to build the quote.</div>`}
-      <ul class="terms">
-        <li>${s.waived ? "No charge for this request." : "Billed in full once you approve."} Payments are non-refundable once work has begun.</li>
-        <li>Includes a short walkthrough video and one round of revisions.</li>
-        <li>Anything not listed is quoted separately.</li>
-        <li>To approve, reply "Approved" to the quote email.</li>
-      </ul>`;
-    if (!$("emailPanel").hidden) $("emailText").textContent = buildEmail(s);
-  }
-
-  function buildEmail(s) {
-    const items = s.lines.map((l) => `• ${l.name}${l.qty > 1 ? ` (×${l.qty})` : ""}: ${l.what || "[what it does]"}: ${money(l.amount)}`).join("\n");
-    const totalLine = s.waived
-      ? `Total: $0. This work has been waived (list value ${money(s.list)}).`
-      : `Total: ${money(s.total)}, billed in full once you approve.`;
-    return `Subject: Your Lawmatics services quote: ${s.firm || "[Firm name]"}
-
-Hi ${s.dmName ? s.dmName.split(" ")[0] : "[Name]"},
-
-Here's the quote for the work you requested:
-
-${items || "• [Item]: [what it does]: $[price]"}
-
-${totalLine}
-
-Your build will be delivered at least 14 days after payment, along with a short video showing how to use it. One round of revisions is included. Anything not listed above would be quoted separately. Payments are non-refundable once work has begun.
-
-To approve, reply "Approved" to this email. This quote is valid for ${config.quoteValidDays || 30} days (until ${fmtDate(validUntil())}).`;
-  }
-
-  // ───────────── Actions ─────────────
-  function toast(msg) { const t = $("toast"); t.textContent = msg; clearTimeout(toast._t); if (msg) toast._t = setTimeout(() => (t.textContent = ""), 5000); }
-  function toastErr(msg) { clearTimeout(toast._t); $("toast").innerHTML = `<span class="err">${esc(msg)}</span>`; }
-
-  function validate(s) {
-    const problems = [];
-    const mark = (id, bad) => $(id).classList.toggle("invalid", bad);
-    mark("firm", !s.firm); if (!s.firm) problems.push("firm name");
-    const idOk = /^\d+$/.test(s.firmId); mark("firmId", !idOk); if (!idOk) problems.push("a numeric Firm ID");
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.dmEmail); mark("dmEmail", !emailOk); if (!emailOk) problems.push("the decision-maker's email");
-    if (!s.lines.length) problems.push("at least one service");
-    return problems;
-  }
-
-  function payload(s) {
-    const summaries = {}, details = {};
-    config.catalog.forEach((c) => {
-      if (!s.lines.some((l) => l.key === c.key)) return;
-      summaries[c.key] = $("s_" + c.key).value.trim();
-      details[c.key] = {};
-      c.details.forEach((d) => {
-        const el = $(`d_${c.key}_${d.id}`);
-        details[c.key][d.id] = d.type === "check" ? el.checked : el.value.trim();
-      });
-    });
-    return { firm: s.firm, firmId: s.firmId, dmName: s.dmName, dmEmail: s.dmEmail, csmEmail: s.csmEmail,
-      practiceArea: s.pa, notes: s.notes, needBy: s.needBy, files: s.files, waived: s.waived,
-      lines: s.lines.map((l) => ({ id: l.id, qty: l.qty })), summaries, details };
-  }
-
-  function wire() {
-    $("catalog").addEventListener("click", (e) => {
-      const b = e.target.closest("button[data-step]");
-      if (!b) return;
-      const inp = $("q_" + b.dataset.id);
-      inp.value = Math.max(0, (parseInt(inp.value, 10) || 0) + parseInt(b.dataset.step, 10));
-      render();
-    });
-    $("qform").addEventListener("input", render);
-    $("signOut").addEventListener("click", () => signOut());
-    $("hideEmail").addEventListener("click", () => { $("emailPanel").hidden = true; });
-
-    $("copyBtn").addEventListener("click", () => {
-      const text = buildEmail(readState());
-      $("emailPanel").hidden = false; $("emailText").textContent = text;
-      const fallback = () => {
-        const r = document.createRange(); r.selectNodeContents($("emailText"));
-        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
-        toast("Couldn't copy automatically. The email text is selected below; press Ctrl/⌘ + C.");
-      };
-      try { navigator.clipboard.writeText(text).then(() => toast("Quote email copied. Paste it into your email and cc the CSM."), fallback); }
-      catch (e) { fallback(); }
-    });
-
-    $("qform").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (busy) return;
-      const s = readState();
-      const problems = validate(s);
-      if (problems.length) { toastErr("Add " + problems.join(", ") + " before creating the card."); return; }
-      busy = true; $("createBtn").disabled = true; toast("Creating the Asana card…");
-      try {
-        const res = await api("createRequest", { request: payload(s) });
-        toast("");
-        $("success").hidden = false;
-        $("success").innerHTML = `<strong>Card created in Quote Sent.</strong>
-          <span>${esc(res.task.name)} · ${esc(res.quoteId)}</span>
-          ${res.task.url && res.task.url !== "#" ? `<a href="${esc(res.task.url)}" target="_blank" rel="noopener">Open in Asana ↗</a>` : "<span>(Test mode: nothing was written.)</span>"}
-          <button class="linkbtn" type="button" id="newQuote">Start a new quote</button>`;
-        $("newQuote").addEventListener("click", resetForm);
-      } catch (err) {
-        toastErr("The card wasn't created: " + err.message);
-      } finally {
-        busy = false; $("createBtn").disabled = false;
-      }
-    });
-  }
-
-  function resetForm() {
-    $("qform").reset();
-    document.querySelectorAll(".invalid").forEach((el) => el.classList.remove("invalid"));
-    $("success").hidden = true; $("emailPanel").hidden = true; toast("");
-    buildCsms(); render();
-    window.scrollTo({ top: 0 });
-  }
-
-  // ───────────── Boot ─────────────
-  wire();
-  if (MOCK) {
-    $("mockBar").hidden = false;
-    user = { name: "Test User", email: "test@lawmatics.com" };
-    start();
-  } else {
+  IS.resumeOrSignIn = function () {
     let saved = null;
     try { saved = sessionStorage.getItem("is_idt"); } catch (e) { /* ignore */ }
     const claims = saved && decodeJwt(saved);
-    if (claims && claims.exp * 1000 > Date.now() + 60000) onCredential({ credential: saved });
+    if (claims && claims.exp * 1000 > Date.now() + 60000) IS.onCredential({ credential: saved });
     else initGsi();
+  };
+
+  // ───────────── Mock backend (test mode) ─────────────
+  const MOCK_CATALOG = [
+    { cat: "Forms", key: "form", items: [
+      { id: "form_std", name: "Form – standard", price: 10, unit: "per form" },
+      { id: "form_logic", name: "Form – conditional logic", price: 20, unit: "per form" }],
+      details: [{ id: "pages", label: "Page count", type: "text" }, { id: "dest", label: "Where should responses go?", type: "text" }] },
+    { cat: "Documents", key: "doc", items: [
+      { id: "doc_std", name: "Document – standard", price: 10, unit: "per document" },
+      { id: "doc_logic", name: "Document – conditional logic", price: 20, unit: "per document" }],
+      details: [{ id: "merge", label: "Merge fields needed", type: "text" }, { id: "sig", label: "Signature required", type: "check" }] },
+    { cat: "Reports", key: "rep", items: [
+      { id: "rep_std", name: "Report – standard", price: 10, unit: "per report" },
+      { id: "rep_cx", name: "Report – complex or dashboard", price: 20, unit: "per report" }],
+      details: [{ id: "data", label: "Data to include and filters", type: "text" }, { id: "aud", label: "Who reads it, how often", type: "text" }] },
+    { cat: "Automations", key: "auto", items: [
+      { id: "auto_simple", name: "Automation – simple", price: 30, unit: "1 trigger, up to 3 emails" },
+      { id: "auto_cx", name: "Automation – complex", price: 40, unit: "per automation" }],
+      details: [{ id: "trigger", label: "Trigger (what starts it)", type: "text" }, { id: "steps", label: "Steps, timing, # of emails/texts", type: "text" }, { id: "notify", label: "Who gets notified", type: "text" }] },
+    { cat: "Email templates", key: "email", items: [
+      { id: "email_one", name: "Email template", price: 5, unit: "per template" },
+      { id: "email_pack", name: "Email template pack (5)", price: 15, unit: "per pack" }],
+      details: [{ id: "copy", label: "Copy provided by firm", type: "check" }, { id: "attached", label: "Attached to an automation", type: "check" }] },
+    { cat: "Training", key: "train", items: [
+      { id: "training", name: "Additional training call", price: 25, unit: "per hour" }],
+      details: [{ id: "topic", label: "Topic / which build", type: "text" }, { id: "watched", label: "Customer has watched the Zight video", type: "check" }] },
+  ];
+  const SECTIONS = ["Quote Sent", "Paid / Ready to assign", "In Build", "Review Video Sent", "In Revisions", "Signed Off / Closed"];
+  const PEOPLE = [
+    { name: "Elliott Jones", email: "elliott@example.com" }, { name: "Gideon Bermeo", email: "gideon@example.com" },
+    { name: "Jevijoh Nulud", email: "jevi@example.com" }, { name: "Kennedy Wickham", email: "kennedy@example.com" },
+    { name: "Marta Reyna", email: "marta@example.com" },
+  ];
+  function daysFromNow(n) { const d = new Date(Date.now() + n * 864e5); return d.toISOString().slice(0, 10); }
+  function mockReq(i, section, firm, firmId, services, total, extra) {
+    return Object.assign({
+      gid: String(9000 + i), name: `${firm} (${firmId}) – Services request`, url: "#", section, completed: section === SECTIONS[5],
+      createdAt: new Date(Date.now() - (20 - i) * 864e5).toISOString(), dueOn: "", assignee: null, numSubtasks: services.length + 2,
+      firmId, practiceArea: "Personal Injury", am: "Elliott Jones", csm: "Elliott Jones", services, total, list: total,
+      quoteId: "Q-SAMPLE-" + firmId, quoteSent: daysFromNow(-(20 - i)), validUntil: daysFromNow(10 + i), paymentStatus: "Not invoiced",
+      paidDate: "", chargebeeId: "", dmEmail: "owner@" + firm.split(" ")[0].toLowerCase() + ".example", delivered: "", zight: "",
+      revisions: 0, offshoreHours: null, closeReason: "",
+    }, extra || {});
   }
+  const mockDb = [
+    mockReq(1, SECTIONS[0], "Sample Harper Law", "5531", ["Form – conditional logic", "Email template"], 35),
+    mockReq(2, SECTIONS[0], "Sample Ortiz & Co", "5540", ["Automation – complex"], 40, { validUntil: daysFromNow(-2) }),
+    mockReq(3, SECTIONS[1], "Sample Reyes Family Law", "5502", ["Document – standard", "Document – conditional logic"], 30,
+      { paymentStatus: "Paid", paidDate: daysFromNow(-1), chargebeeId: "inv_sample_1" }),
+    mockReq(4, SECTIONS[2], "Sample Kline Estate", "5488", ["Automation – simple", "Email template pack (5)"], 45,
+      { paymentStatus: "Paid", paidDate: daysFromNow(-6), assignee: { name: "Jevijoh Nulud", email: "jevi@example.com" }, dueOn: daysFromNow(3) }),
+    mockReq(5, SECTIONS[2], "Sample Park Immigration", "5470", ["Report – complex or dashboard"], 20,
+      { paymentStatus: "Paid", paidDate: daysFromNow(-20), assignee: { name: "Gideon Bermeo", email: "gideon@example.com" }, dueOn: daysFromNow(-1) }),
+    mockReq(6, SECTIONS[3], "Sample Moss PI Group", "5455", ["Form – standard", "Form – standard"], 20,
+      { paymentStatus: "Paid", paidDate: daysFromNow(-16), assignee: { name: "Marta Reyna", email: "marta@example.com" }, delivered: daysFromNow(-2), dueOn: daysFromNow(-2) }),
+    mockReq(7, SECTIONS[4], "Sample Lane Bankruptcy", "5420", ["Automation – simple"], 0,
+      { paymentStatus: "Waived", list: 30, assignee: { name: "Jevijoh Nulud", email: "jevi@example.com" }, revisions: 1 }),
+    mockReq(8, SECTIONS[5], "Sample Vale Defense", "5400", ["Training call"], 25,
+      { paymentStatus: "Paid", paidDate: daysFromNow(-30), closeReason: "Signed off", assignee: { name: "Gideon Bermeo", email: "gideon@example.com" } }),
+  ];
+  const mockExtras = {}; // gid → { notes, subtasks, comments }
+  function extrasFor(r) {
+    if (!mockExtras[r.gid]) mockExtras[r.gid] = {
+      notes: "Quote " + r.quoteId + " · sample data\n\nNotes\nThis is test-mode sample data.",
+      subtasks: r.services.map((s, i) => ({ gid: r.gid + "-" + i, name: "1× " + s, completed: r.section !== SECTIONS[0] && i === 0 }))
+        .concat([{ gid: r.gid + "-p", name: "Record payment (Chargebee invoice ID)", completed: !!r.paidDate }, { gid: r.gid + "-z", name: "Zight walkthrough video", completed: !!r.delivered }]),
+      comments: [{ gid: "c1", text: "Elliott Jones: Customer approved by reply.", at: new Date(Date.now() - 864e5).toISOString(), by: "Justin Shephard" }],
+    };
+    return mockExtras[r.gid];
+  }
+  IS.mockApi = function (action, p) {
+    const wait = (v) => new Promise((ok) => setTimeout(() => ok(Object.assign({ ok: true }, v)), 250));
+    const find = (gid) => mockDb.find((r) => r.gid === gid);
+    switch (action) {
+      case "getConfig": return wait({ config: { catalog: MOCK_CATALOG, minOrder: 50, quoteValidDays: 30, sections: SECTIONS, csms: PEOPLE, people: PEOPLE,
+        paymentStatuses: ["Not invoiced", "Invoiced", "Paid", "Refunded", "Waived"], closeReasons: ["Signed off", "Auto-accepted", "Inactive", "Cancelled", "Refunded"], projectUrl: "#" } });
+      case "listRequests": return wait({ requests: mockDb.map((r) => Object.assign({}, r)) });
+      case "getRequest": { const r = find(p.gid); return wait({ request: Object.assign({}, r, extrasFor(r)) }); }
+      case "updateRequest": {
+        const r = find(p.gid); const c = p.changes; const log = [];
+        if (c.paymentStatus === "Paid" && !r.paidDate && !c.paidDate) c.paidDate = IS.todayIso();
+        Object.keys(c).forEach((k) => {
+          if (k === "assignee") { const per = PEOPLE.find((x) => x.email === c.assignee); r.assignee = per ? Object.assign({}, per) : null; log.push("Assignee"); }
+          else if (k === "section") { r.section = c.section; r.completed = c.section === SECTIONS[5]; log.push("Stage"); }
+          else { r[k] = ["total", "revisions", "offshoreHours"].includes(k) ? (c[k] === "" ? null : Number(c[k])) : c[k]; log.push(k); }
+        });
+        const ex = extrasFor(r);
+        ex.comments.push({ gid: "c" + Date.now(), text: "Updated by " + IS.user.name + " (test mode): " + log.join(", "), at: new Date().toISOString(), by: "Justin Shephard" });
+        return wait({ request: Object.assign({}, r, ex) });
+      }
+      case "setSubtask": { const ex = mockExtras[p.parentGid]; const s = ex && ex.subtasks.find((x) => x.gid === p.gid); if (s) s.completed = p.completed; return wait({ subtask: { gid: p.gid, completed: p.completed } }); }
+      case "addComment": { const ex = mockExtras[p.gid]; const cm = { gid: "c" + Date.now(), text: IS.user.name + ": " + p.text, at: new Date().toISOString(), by: "Justin Shephard" }; if (ex) ex.comments.push(cm); return wait({ comment: cm }); }
+      case "createRequest": {
+        const r = p.request;
+        const items = MOCK_CATALOG.flatMap((c) => c.items);
+        const list = r.lines.reduce((n, l) => n + l.qty * ((items.find((i) => i.id === l.id) || {}).price || 0), 0);
+        const card = mockReq(mockDb.length + 1, SECTIONS[0], r.firm, r.firmId, r.lines.map((l) => (items.find((i) => i.id === l.id) || {}).name), r.waived ? 0 : list,
+          { list, paymentStatus: r.waived ? "Waived" : "Not invoiced", quoteSent: IS.todayIso(), validUntil: daysFromNow(30) });
+        mockDb.unshift(card);
+        return wait({ quoteId: "Q-SAMPLE-" + r.firmId, task: { gid: card.gid, url: "#", name: card.name } });
+      }
+      default: return wait({});
+    }
+  };
 })();

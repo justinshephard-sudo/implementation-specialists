@@ -1,6 +1,6 @@
 # Implementation Specialists
 
-Internal web app for the Lawmatics implementation specialist team. First module: the **Services Quote Builder** (Additional Services).
+Internal web app for the Lawmatics implementation specialist team. **Additional Services**: the Builds board (every request by stage, revenue totals, edits, subtasks and comments that write to Asana) plus the quote builder (New quote tab).
 
 ```
 index.html + assets/  →  GitHub Pages (static, Google sign-in, no secrets, no prices)

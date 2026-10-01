@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Services Quote Builder</title>
+  <title>Additional Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/styles.css?v=2">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -15,8 +15,8 @@
   <div class="wrap" id="gate">
     <div class="gate">
       <div class="eyebrow">Implementation Specialists</div>
-      <h1>Services Quote Builder</h1>
-      <p>Sign in with your Lawmatics Google account to build and send a services quote.</p>
+      <h1>Additional Services</h1>
+      <p>Sign in with your Lawmatics Google account to see current builds and create quotes.</p>
       <div id="gsiButton"></div>
       <p class="gerr" id="gateErr" hidden></p>
     </div>
@@ -25,8 +25,8 @@
   <div class="wrap" id="app" hidden>
     <header class="top">
       <div>
-        <div class="eyebrow">Implementation Specialists · Additional Services</div>
-        <h1>Services Quote Builder</h1>
+        <div class="eyebrow">Implementation Specialists</div>
+        <h1>Additional Services</h1>
       </div>
       <div class="who"><div class="avatar" id="avatar" aria-hidden="true"></div><span>Signed in as <strong id="whoName"></strong> · <button class="linkbtn" type="button" id="signOut">Sign out</button></span></div>
     </header>
@@ -35,6 +35,33 @@
       <span><strong>Test mode.</strong> Sample prices and data, no sign-in, and nothing is written to Asana.</span>
     </div>
 
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-builds" aria-controls="view-builds" aria-selected="true">Builds</button>
+      <button type="button" role="tab" id="tab-quote" aria-controls="view-quote" aria-selected="false">New quote</button>
+    </nav>
+
+    <section id="view-builds" role="tabpanel" aria-labelledby="tab-builds">
+      <div class="summary" id="summary"></div>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Search firm, Firm ID, quote ID…" aria-label="Search requests">
+        <select id="fAssignee" aria-label="Filter by assignee"><option value="">All assignees</option></select>
+        <select id="fCsm" aria-label="Filter by CSM"><option value="">All CSMs</option></select>
+        <select id="fPeriod" aria-label="Revenue period">
+          <option value="month">Revenue: this month</option>
+          <option value="lastmonth">Revenue: last month</option>
+          <option value="quarter">Revenue: this quarter</option>
+          <option value="ytd">Revenue: year to date</option>
+          <option value="all">Revenue: all time</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="updated" id="updated"></span>
+        <button class="btn small" type="button" id="refresh">Refresh</button>
+        <button class="btn small" type="button" id="csv">Download CSV</button>
+      </div>
+      <div class="board-wrap"><div class="board" id="board"><div class="state">Loading builds…</div></div></div>
+    </section>
+
+    <section id="view-quote" role="tabpanel" aria-labelledby="tab-quote" hidden>
     <form class="grid" id="qform" novalidate>
       <div class="col">
         <section class="block" aria-labelledby="h-acct">
@@ -100,9 +127,23 @@
         </div>
       </aside>
     </form>
+    </section>
   </div>
 
-  <script src="assets/config.js"></script>
-  <script src="assets/app.js"></script>
+  <!-- Request detail drawer -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden>
+    <div class="drawer-head">
+      <div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div>
+      <button class="btn small" type="button" id="dClose">Close</button>
+    </div>
+    <div class="drawer-body" id="dBody"></div>
+  </aside>
+
+  <script src="assets/config.js?v=2"></script>
+  <script src="assets/app.js?v=2"></script>
+  <script src="assets/quote.js?v=2"></script>
+  <script src="assets/board.js?v=2"></script>
+  <script src="assets/boot.js?v=2"></script>
 </body>
 </html>
