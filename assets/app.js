@@ -148,6 +148,11 @@
       case "getConfig": return wait({ config: { catalog: MOCK_CATALOG, minOrder: 50, quoteValidDays: 30, sections: SECTIONS, csms: PEOPLE, people: PEOPLE,
         paymentStatuses: ["Not invoiced", "Invoiced", "Paid", "Refunded", "Waived"], closeReasons: ["Signed off", "Auto-accepted", "Inactive", "Cancelled", "Refunded"], projectUrl: "#" } });
       case "listRequests": return wait({ requests: mockDb.map((r) => Object.assign({}, r)) });
+      case "listFirms": return wait({ firms: [
+        ["Sample Harper Law", "5531", "Personal Injury", "Elliott Jones"], ["Sample Harper & Vale LLP", "5532", "Business", "Kennedy Wickham"],
+        ["Sample Ortiz & Co", "5540", "Immigration", "Elliott Jones"], ["Sample Reyes Family Law", "5502", "Family Law", "Kennedy Wickham"],
+        ["Sample Kline Estate Planning", "5488", "Estate Planning", "Elliott Jones"], ["Sample Park Immigration", "5470", "Immigration", "Kennedy Wickham"],
+        ["Sample Moss PI Group", "5455", "Personal Injury", "Elliott Jones"], ["Sample Lane Bankruptcy", "5420", "Bankruptcy", "Kennedy Wickham"] ] });
       case "getRequest": { const r = find(p.gid); return wait({ request: Object.assign({}, r, extrasFor(r)) }); }
       case "updateRequest": {
         const r = find(p.gid); const c = p.changes; const log = [];

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/styles.css?v=4">
+  <link rel="stylesheet" href="assets/styles.css?v=5">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -77,8 +77,12 @@
         <section class="block" aria-labelledby="h-acct">
           <h2 id="h-acct">Account</h2>
           <div class="fields">
-            <label class="f"><span>Firm name <span class="req">*</span></span><input type="text" id="firm" autocomplete="off"></label>
-            <label class="f"><span>Firm ID <span class="req">*</span></span><input type="text" id="firmId" inputmode="numeric" autocomplete="off"></label>
+            <div class="combo">
+              <label class="f"><span>Firm <span class="req">*</span></span><input type="text" id="firm" autocomplete="off" spellcheck="false" placeholder="Start typing a firm name or ID…" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="firmList"></label>
+              <div class="combo-list" id="firmList" role="listbox" aria-label="Firms on file" hidden></div>
+            </div>
+            <label class="f"><span>Firm ID <span class="req">*</span></span><input type="text" id="firmId" inputmode="numeric" autocomplete="off" placeholder="Filled in when you pick a firm"></label>
+            <div class="firm-status full" id="firmStatus" aria-live="polite"></div>
             <label class="f">Decision-maker name<input type="text" id="dmName" autocomplete="off"></label>
             <label class="f"><span>Decision-maker email <span class="req">*</span></span><input type="email" id="dmEmail" autocomplete="off"></label>
             <label class="f">CSM (cc'd on the quote)<select id="csm"><option value="">Select CSM…</option></select></label>
@@ -152,10 +156,10 @@
     <div class="drawer-body" id="dBody"></div>
   </aside>
 
-  <script src="assets/config.js?v=4"></script>
-  <script src="assets/app.js?v=4"></script>
-  <script src="assets/quote.js?v=4"></script>
-  <script src="assets/board.js?v=4"></script>
-  <script src="assets/boot.js?v=4"></script>
+  <script src="assets/config.js?v=5"></script>
+  <script src="assets/app.js?v=5"></script>
+  <script src="assets/quote.js?v=5"></script>
+  <script src="assets/board.js?v=5"></script>
+  <script src="assets/boot.js?v=5"></script>
 </body>
 </html>

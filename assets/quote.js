@@ -9,7 +9,141 @@
 
   Q.init = function () {
     buildCsms(); buildCatalog(); render();
+    loadFirms();
   };
+
+  // ───────────── Firm lookup (firms on file, from the Support Dashboard's Accounts tab) ─────────────
+  let firms = null;      // [{ name, firmId, area, am }]
+  let picked = null;     // the firm chosen from the list
+  let options = [];      // current dropdown matches
+  let active = -1;
+
+  async function loadFirms() {
+    setStatus('<span class="hint" style="margin:0">Loading firms on file…</span>');
+    try {
+      const res = await IS.api("listFirms");
+      firms = (res.firms || []).map(([name, firmId, area, am]) => ({ name, firmId, area, am }));
+      setStatus("");
+    } catch (e) {
+      firms = [];
+      setStatus(`<span class="off-file">Couldn't load firms on file (${esc(e.message)}).</span> Type the firm name and Firm ID by hand.`);
+    }
+  }
+  function setStatus(html) { $("firmStatus").innerHTML = html; }
+  const normId = (s) => String(s == null ? "" : s).toLowerCase().replace(/[,\s\u00a0]/g, "").replace(/\.0+$/, "");
+
+  // Same ranking as the Support Dashboard: Firm ID exact > prefix > contains, then name contains, then letters in order.
+  function score(q, f) {
+    q = q.toLowerCase().trim();
+    if (!q) return -1;
+    const name = f.name.toLowerCase();
+    const id = normId(f.firmId), qn = normId(q);
+    if (id && qn && /^\d+$/.test(qn)) {
+      if (id === qn) return 300;
+      if (id.startsWith(qn)) return 200;
+      if (id.includes(qn)) return 150;
+    }
+    if (name.startsWith(q)) return 120;
+    const at = name.indexOf(q);
+    if (at >= 0) return 100 - Math.min(at, 50);
+    const words = q.split(/\s+/).filter(Boolean);
+    if (words.length > 1 && words.every((w) => name.includes(w))) return 60;
+    let qi = 0;
+    for (let i = 0; i < name.length && qi < q.length; i++) if (name[i] === q[qi]) qi++;
+    return qi === q.length && q.length >= 3 ? 30 : -1;
+  }
+  function highlight(name, q) {
+    const i = name.toLowerCase().indexOf(q.toLowerCase().trim());
+    if (!q.trim() || i < 0) return esc(name);
+    return esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.trim().length)) + "</mark>" + esc(name.slice(i + q.trim().length));
+  }
+  function openList(q) {
+    const list = $("firmList");
+    if (!firms || !q.trim()) { closeList(); return; }
+    options = firms.map((f) => ({ f, s: score(q, f) })).filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.f.name.localeCompare(b.f.name)).slice(0, 8).map((x) => x.f);
+    active = options.length ? 0 : -1;
+    list.innerHTML = options.length
+      ? options.map((f, i) => `<div class="combo-opt" role="option" id="firmOpt${i}" data-i="${i}" aria-selected="${i === active}">
+          <span class="n">${highlight(f.name, q)}</span>
+          <span class="m">${esc(["Firm " + f.firmId, f.area, f.am && "AM " + f.am].filter(Boolean).join(" · "))}</span></div>`).join("")
+      : `<div class="combo-empty">No firm on file matches "${esc(q.trim())}". You can still type the name and Firm ID by hand.</div>`;
+    list.hidden = false;
+    $("firm").setAttribute("aria-expanded", "true");
+    $("firm").setAttribute("aria-activedescendant", active >= 0 ? "firmOpt" + active : "");
+  }
+  function closeList() {
+    $("firmList").hidden = true; options = []; active = -1;
+    $("firm").setAttribute("aria-expanded", "false");
+    $("firm").removeAttribute("aria-activedescendant");
+  }
+  function moveActive(d) {
+    if (!options.length) return;
+    active = (active + d + options.length) % options.length;
+    [...$("firmList").querySelectorAll(".combo-opt")].forEach((el, i) => {
+      el.setAttribute("aria-selected", String(i === active));
+      if (i === active) el.scrollIntoView({ block: "nearest" });
+    });
+    $("firm").setAttribute("aria-activedescendant", "firmOpt" + active);
+  }
+  function pickFirm(f) {
+    picked = f;
+    $("firm").value = f.name;
+    $("firmId").value = f.firmId;
+    $("firmId").readOnly = true;
+    $("firm").classList.remove("invalid"); $("firmId").classList.remove("invalid");
+    // practice area: select the matching option, adding it if the list doesn't have it
+    if (f.area) {
+      const sel = $("pa");
+      let o = [...sel.options].find((x) => x.value.toLowerCase() === f.area.toLowerCase());
+      if (!o) { o = new Option(f.area, f.area); sel.add(o); }
+      sel.value = o.value;
+    }
+    // CSM: the firm's account manager, when they're in the CSM list
+    if (f.am) {
+      const c = (IS.config.csms || []).find((x) => x.name.toLowerCase() === f.am.toLowerCase());
+      if (c) $("csm").value = c.email;
+    }
+    setStatus(`<span class="on-file">✓ On file</span><span>${esc(["Firm " + f.firmId, f.area, f.am && "AM " + f.am].filter(Boolean).join(" · "))}</span><button class="linkbtn" type="button" id="firmChange">Change firm</button>`);
+    $("firmChange").addEventListener("click", clearFirm);
+    closeList(); render();
+  }
+  function clearFirm() {
+    picked = null;
+    $("firm").value = ""; $("firmId").value = ""; $("firmId").readOnly = false;
+    setStatus(""); render(); $("firm").focus();
+  }
+  Q.firmPicked = () => picked;
+  function wireFirm() {
+    const input = $("firm");
+    input.addEventListener("input", () => {
+      if (picked) { picked = null; $("firmId").value = ""; $("firmId").readOnly = false; setStatus(""); }
+      openList(input.value);
+    });
+    input.addEventListener("focus", () => { if (!picked && input.value.trim()) openList(input.value); });
+    input.addEventListener("keydown", (e) => {
+      if ($("firmList").hidden) { if (e.key === "ArrowDown" && input.value.trim()) { openList(input.value); e.preventDefault(); } return; }
+      if (e.key === "ArrowDown") { moveActive(1); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { moveActive(-1); e.preventDefault(); }
+      else if (e.key === "Enter") { if (active >= 0) { pickFirm(options[active]); e.preventDefault(); } }
+      else if (e.key === "Escape") { closeList(); }
+    });
+    input.addEventListener("blur", () => setTimeout(closeList, 150));
+    // mousedown (not click) so the choice lands before the input's blur closes the list
+    $("firmList").addEventListener("mousedown", (e) => {
+      const opt = e.target.closest(".combo-opt");
+      if (opt) { e.preventDefault(); pickFirm(options[Number(opt.dataset.i)]); }
+    });
+    // typing a Firm ID by hand: if it's on file, fill in the firm
+    $("firmId").addEventListener("input", () => {
+      if (picked || !firms) return;
+      const id = normId($("firmId").value);
+      const f = id && firms.find((x) => x.firmId === id);
+      if (f) pickFirm(f);
+      else if (id && firms.length) setStatus('<span class="off-file">Firm ID not on file.</span> Double-check it, or pick the firm from the list.');
+      else setStatus("");
+    });
+  }
 
   function buildCsms() {
     const sel = $("csm");
@@ -187,6 +321,7 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
 
   function resetForm() {
     $("qform").reset();
+    picked = null; $("firmId").readOnly = false; setStatus(""); closeList();
     document.querySelectorAll("#qform .invalid").forEach((el) => el.classList.remove("invalid"));
     $("success").hidden = true; $("emailPanel").hidden = true; toast("");
     buildCsms(); render();
@@ -194,6 +329,7 @@ To approve, reply "Approved" to this email. This quote is valid for ${IS.config.
   }
 
   Q.wire = function () {
+    wireFirm();
     $("catalog").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-step]");
       if (!b) return;
